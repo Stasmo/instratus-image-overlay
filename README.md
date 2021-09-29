@@ -1,4 +1,6 @@
-# frontend
+# Instratus Image Overlay
+
+Find the app here: https://stasmo.github.io/instratus-image-overlay/ 
 
 ## Project setup
 ```
