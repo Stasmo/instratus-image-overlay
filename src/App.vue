@@ -144,6 +144,7 @@
         { text: 'Created At', value: 'created' },
         { text: 'Thumbnail', value: 'url', align: 'end'},
         { text: 'Description', value: 'description' },
+        { text: 'Location', value: 'location' },
         { text: 'Top?', value: 'top' },
         { text: 'Alerts', value: 'alerts' },
         { text: 'Actions', value: 'actions', align: 'end'},
