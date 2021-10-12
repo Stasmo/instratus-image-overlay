@@ -44,14 +44,17 @@
               <v-row>
                 <v-col>
                   <h3>CSV file</h3>
+                  <v-subheader>Columns should be "file,description,location". No spaces, all lowercase.</v-subheader>
                   <v-file-input
                     accept=".csv"
                     label="Select CSV file"
                     v-model="csvFile"
+                    clearable
                   ></v-file-input>
                 </v-col>
                 <v-col>
                   <h3>Image files</h3>
+                  <v-subheader>Make sure image names match the "file" column exactly, including upper and lower case.</v-subheader>
                   <v-file-input
                     accept="image/*"
                     label="Select images"
@@ -60,32 +63,51 @@
                   ></v-file-input>
                 </v-col>
               </v-row>
-              <v-data-table
-                v-if="files"
-                :items="fileData"
-                :headers="headers"
-              >
-                <template v-slot:item.alerts="{ item }">
-                  <v-alert
-                    v-for="alert in item.alerts"
-                    :key="alert.name"
-                    border="left"
-                    :type="alert.type"
+              <v-row>
+                <v-col>
+                  <v-data-table
+                    v-if="files"
+                    :items="fileData"
+                    :headers="headers"
                   >
-                    {{ alert.name }}
-                  </v-alert>
-                </template>
-                <template v-slot:item.url="{ item }">
-                  <img :src="item.url" alt="" height="50px">
-                </template>
-                <template v-slot:item.actions="{ item }">
-                  <v-btn @click="preview(item)">Preview</v-btn>
-                </template>
-                <template v-slot:item.top="{ item }">
-                  <v-switch v-model="item.top"></v-switch>
-                </template>
-              </v-data-table>
-          <v-btn @click="download" color="primary" :disabled="!fileData || !fileData.length">Download</v-btn>
+                    <template v-slot:item.alerts="{ item }">
+                      <v-alert
+                        v-for="alert in item.alerts"
+                        :key="alert.name"
+                        border="left"
+                        :type="alert.type"
+                      >
+                        {{ alert.name }}
+                      </v-alert>
+                    </template>
+                    <template v-slot:item.url="{ item }">
+                      <img :src="item.url" alt="" height="50px">
+                    </template>
+                    <template v-slot:item.actions="{ item }">
+                      <v-btn @click="preview(item)">Preview</v-btn>
+                    </template>
+                    <template v-slot:item.top="{ item }">
+                      <v-switch v-model="item.top"></v-switch>
+                    </template>
+                  </v-data-table>
+                  <v-btn
+                    @click="download"
+                    color="primary"
+                    :disabled="!fileData || !fileData.length"
+                    :loading="loadingDownload"
+                  >Download</v-btn>
+                </v-col>
+              </v-row>
+              <v-row v-if="showProgressBar">
+                <v-col>
+                  <v-progress-linear
+                    :value="progress * 100 / fileData.length"
+                    :indeterminate="progressIndeterminate"
+                  ></v-progress-linear>
+                  <div v-if="!progressIndeterminate">Stamping files: {{ this.progress }}/{{ this.fileData.length }}</div>
+                  <div v-else>Generating zip file</div>
+                </v-col>
+              </v-row>
             </v-card-text>
           </v-card>
         </v-col>
@@ -138,6 +160,10 @@
       fontSize: null,
       alerts: [],
       previewDialog: false,
+      showProgressBar: false,
+      progressIndeterminate: false,
+      loadingDownload: false,
+      progress: 0,
       previewImage: '',
       headers: [
         { text: 'Name', value: 'name'},
@@ -173,12 +199,22 @@
             acc[next.file] = next
             return acc
           }, {})
+          if (this.files) this.processFileData()
+        
         };
         reader.readAsText(file);
       }
     },
     computed: {
       fileData() {
+        let fileData = []
+        if(this.files) fileData = this.processFileData()
+        console.log(fileData)
+        return fileData
+      }
+    },
+    methods: {
+      processFileData() {
         return this.files && this.files.map(file => {
           let item = { name: file.name, created: null, url: URL.createObjectURL(file), file, description: '', top: false, alerts: [] }
           if (this.csvData && this.csvData[file.name]) {
@@ -194,20 +230,28 @@
 
           return item
         })
-      }
-    },
-    methods: {
+      },
       async download() {
+        this.loadingDownload = true
         var zip = new JSZip();
         var img = zip.folder("images");
+        this.progress = 0
+        this.showProgressBar = true
+        console.log(this.fileData)
         for (let image of this.fileData) {
           let imageData = await this.addTextToImage(image)
           img.file(image.name, imageData.split(',')[1], {base64: true});
+          this.fileData[this.progress++] = null
         }
+        this.progressIndeterminate = true
         zip.generateAsync({type:"blob"})
         .then((content) => {
             // see FileSaver.js
             window.saveAs(content, `${this.company}-${this.project}-stamped-images-${Date.now()}.zip`);
+            this.showProgressBar = false
+            this.loadingDownload = false
+            this.progressIndeterminate = false
+            this.progress = 0
         });
       },
       preview(item) {
