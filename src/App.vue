@@ -31,6 +31,15 @@
                     label="Font Size"
                     v-model="fontSize"
                   ></v-text-field>
+                  <v-btn @click="getInstalledFonts" v-if="!fonts.length">Change font</v-btn>
+                  <div v-if="!fonts.length">This is based on the fonts you have installed on your PC. Enable font access API at chrome://flags</div>
+                  <v-autocomplete
+                    v-model="customFont"
+                    v-else
+                    :items="fonts"
+                    label="Select font"
+                  ></v-autocomplete>
+                  <div v-if="customFont" :style="{ 'font-family': customFont } ">Here is what the font looks like.</div>
                 </v-col>
                 <v-col>
                   <h3>Text Color</h3>
@@ -66,7 +75,7 @@
               <v-row>
                 <v-col>
                   <v-data-table
-                    v-if="files"
+                    v-if="fileData.length"
                     :items="fileData"
                     :headers="headers"
                   >
@@ -90,7 +99,25 @@
                       <v-switch v-model="item.top"></v-switch>
                     </template>
                   </v-data-table>
+                  <v-row>
+                    <v-col>
+                      <v-slider
+                        :label="gbPerFile + 'GB of images per zip file'"
+                        v-model="gbPerFile"
+                        :max="10"
+                        :min="1"
+                        ticks="always"
+                        persistent-hint
+                        :disabled="loadingDownload"
+                        :hint="`Total image size: ${totalImageSizeGb.toFixed(2)}GB.
+                        Will generate ${Math.ceil(totalImageSizeGb/gbPerFile)} file(s).`"
+                      ></v-slider>
+                    </v-col>
+                    <v-col>
+                    </v-col>
+                  </v-row>
                   <v-btn
+                    class="mt-4"
                     @click="download"
                     color="primary"
                     :disabled="!fileData || !fileData.length"
@@ -105,7 +132,7 @@
                     :indeterminate="progressIndeterminate"
                   ></v-progress-linear>
                   <div v-if="!progressIndeterminate">Stamping files: {{ this.progress }}/{{ this.fileData.length }}</div>
-                  <div v-else>Generating zip file</div>
+                  <div v-else>Generating zip file {{ fileCount }}</div>
                 </v-col>
               </v-row>
             </v-card-text>
@@ -156,7 +183,10 @@
       drawer: null,
       csvFile: null,
       files: null,
+      fonts: [],
       color: '#16bbee',
+      gbPerFile: 2,
+      fileData: [],
       fontSize: null,
       alerts: [],
       previewDialog: false,
@@ -164,7 +194,9 @@
       progressIndeterminate: false,
       loadingDownload: false,
       progress: 0,
+      customFont: null,
       previewImage: '',
+      fileCount: 1,
       headers: [
         { text: 'Name', value: 'name'},
         { text: 'Created At', value: 'created' },
@@ -189,34 +221,48 @@
         }
       },
       csvFile(file) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          let results = parse(reader.result, {
-            columns: true,
-            skip_empty_lines: true
-          })
-          this.csvData = results.reduce((acc, next) => {
-            acc[next.file] = next
-            return acc
-          }, {})
-          if (this.files) this.processFileData()
-        
-        };
-        reader.readAsText(file);
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = () => {
+            let results = parse(reader.result, {
+              columns: true,
+              skip_empty_lines: true
+            })
+            this.csvData = results.reduce((acc, next) => {
+              acc[next.file] = next
+              return acc
+            }, {})
+            if (this.files) this.fileData = this.processFileData()
+          };
+          reader.readAsText(file);
+        } else {
+          this.csvData = null
+          if (this.files) this.fileData = this.processFileData()
+        }
+      },
+      files(files) {
+        this.fileData = files ? this.processFileData() : []
       }
     },
     computed: {
-      fileData() {
-        let fileData = []
-        if(this.files) fileData = this.processFileData()
-        console.log(fileData)
-        return fileData
+      totalImageSize() {
+        if (!this.fileData) return 0
+        console.log(this.fileData)
+        let size = this.fileData.reduce((a, v) => a + v.size, 0)
+        return size
+      },
+      totalImageSizeGb() {
+        if (!this.fileData) return 0
+        return this.totalImageSize/(1024*1024*1024)
       }
+    },
+    created() {
+      this.getInstalledFonts()
     },
     methods: {
       processFileData() {
         return this.files && this.files.map(file => {
-          let item = { name: file.name, created: null, url: URL.createObjectURL(file), file, description: '', top: false, alerts: [] }
+          let item = { name: file.name, size: file.size, created: null, url: URL.createObjectURL(file), file, description: '', top: false, alerts: [] }
           if (this.csvData && this.csvData[file.name]) {
             item = { ...item, ...this.csvData[file.name] }
           }
@@ -237,17 +283,30 @@
         var img = zip.folder("images");
         this.progress = 0
         this.showProgressBar = true
-        console.log(this.fileData)
+        let currentSize = 0;
+        let maxSize = this.gbPerFile * 1024 * 1024 * 1024;
+        this.fileCount = 1;
+        let nowDate = Date.now()
         for (let image of this.fileData) {
           let imageData = await this.addTextToImage(image)
           img.file(image.name, imageData.split(',')[1], {base64: true});
+          currentSize += image.size;
           this.fileData[this.progress++] = null
+          if (currentSize > maxSize) {
+            this.progressIndeterminate = true
+            let content = await zip.generateAsync({type:"blob"})
+            this.progressIndeterminate = false
+            window.saveAs(content, `${this.company}-${this.project}-stamped-images-${nowDate}-${this.fileCount++}.zip`);
+            currentSize = 0;
+            zip = new JSZip();
+            img = zip.folder("images");
+          }
         }
         this.progressIndeterminate = true
         zip.generateAsync({type:"blob"})
         .then((content) => {
             // see FileSaver.js
-            window.saveAs(content, `${this.company}-${this.project}-stamped-images-${Date.now()}.zip`);
+            window.saveAs(content, `${this.company}-${this.project}-stamped-images-${nowDate}-${this.fileCount++}.zip`);
             this.showProgressBar = false
             this.loadingDownload = false
             this.progressIndeterminate = false
@@ -257,6 +316,26 @@
       preview(item) {
         this.addTextToImage(item)
         this.previewDialog = true
+      },
+      async getInstalledFonts() {
+        const { state } = await navigator.permissions.query({ name: "font-access" })
+        
+        if (state === "denied") {
+            return []
+        }
+        
+        const fonts = []
+        
+        try {
+            for (const { fullName } of await navigator.fonts.query()) {
+                fonts.push(fullName)
+            }
+        } catch (e) {
+          console.error(e)
+          console.error('Could not get available fonts')
+        }
+        
+        this.fonts = fonts
       },
       addTextToImage(image) {
         return new Promise(resolve => {
@@ -276,7 +355,7 @@
               let numberOfLines = 7
               let top = (fontSize + 5) * (numberOfLines - 1);
               if (image.top) top = imageObj.height - fontSize - 5;
-              context.font = fontSize + "pt Calibri";
+              context.font = fontSize + `pt ${this.customFont || 'Calibri'}`;
               context.strokeText(this.company, 5, imageObj.height - top);
               context.fillText(this.company, 5, imageObj.height - top);
               context.strokeText(this.project, 5, imageObj.height - top + fontSize + 5);
