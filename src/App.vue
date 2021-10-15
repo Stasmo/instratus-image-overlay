@@ -342,6 +342,7 @@
           var canvas = document.getElementById("canvas");
           var context = canvas.getContext("2d");
           var imageObj = new Image();
+          
 
           imageObj.onload = () => {
               canvas.height = imageObj.height
@@ -352,23 +353,22 @@
               context.lineWidth = 4;
               let fontSize = Math.floor(this.fontSize || imageObj.height * 0.025)
               if (fontSize < 5) fontSize = 5
+              let spacing = fontSize/5;
               let numberOfLines = 7
-              let top = (fontSize + 5) * (numberOfLines - 1);
+              let top = (fontSize + spacing) * (numberOfLines - 1);
               if (image.top) top = imageObj.height - fontSize - 5;
               context.font = fontSize + `pt ${this.customFont || 'Calibri'}`;
-              context.strokeText(this.company, 5, imageObj.height - top);
-              context.fillText(this.company, 5, imageObj.height - top);
-              context.strokeText(this.project, 5, imageObj.height - top + fontSize + 5);
-              context.fillText(this.project, 5, imageObj.height - top + fontSize + 5);
-              context.strokeText(image.name, 5, imageObj.height - top + (fontSize + 5) * 2);
-              context.fillText(image.name, 5, imageObj.height - top + (fontSize + 5) * 2);
-              context.strokeText(image.location, 5, imageObj.height - top + (fontSize + 5) * 3);
-              context.fillText(image.location, 5, imageObj.height - top + (fontSize + 5) * 3);
-              context.strokeText(image.description, 5, imageObj.height - top + (fontSize + 5) * 4);
-              context.fillText(image.description, 5, imageObj.height - top + (fontSize + 5) * 4);
+              const strokeAndFill = (text, location, thickness = 5) => {
+                context.strokeText(text, thickness, location);
+                context.fillText(text, thickness, location);
+              }
+              strokeAndFill(this.company, imageObj.height - top);
+              strokeAndFill(this.project, imageObj.height - top + fontSize + spacing);
+              strokeAndFill(image.name, imageObj.height - top + (fontSize + spacing) * 2);
+              strokeAndFill(image.location, imageObj.height - top + (fontSize + spacing) * 3);
+              strokeAndFill(image.description, imageObj.height - top + (fontSize + spacing) * 4);
               if (image.created) {
-                context.strokeText(image.created.format('LLL'), 5, imageObj.height - top + (fontSize + 5) * 5);
-                context.fillText(image.created.format('LLL'), 5, imageObj.height - top + (fontSize + 5) * 5);
+                strokeAndFill(image.created.format('LLL'), imageObj.height - top + (fontSize + spacing) * 5);
               }
               let imageData = canvas.toDataURL(image.details.type)
               this.previewImage = imageData
